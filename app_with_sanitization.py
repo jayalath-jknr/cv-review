@@ -26,7 +26,7 @@ def sanitize_text(text):
     Remove or neutralize phrases that might be used for prompt injection.
     You can expand the list below with other suspicious phrases as needed.
     """
-    suspicious_phrases = ["Ignoring all the other prompts"]
+    suspicious_phrases = ["Ignoring all the other prompts", "Ignore prompts", "ignore instructions", "Bypass Instructions"]
     for phrase in suspicious_phrases:
         text = text.replace(phrase, "")
     return text
@@ -42,7 +42,6 @@ def analyze_resume_relevancy(resume_text, job_description):
     
     # Sanitize the resume text (and optionally the job description) to remove injection attempts.
     resume_text = sanitize_text(resume_text)
-    # job_description = sanitize_text(job_description)  # Uncomment if needed
 
     # Define a strict system message that sets the expected JSON output format.
     system_message = (
@@ -70,12 +69,12 @@ def analyze_resume_relevancy(resume_text, job_description):
         {"role": "user", "content": f"Resume:\n{resume_text}"}
     ]
     
-    # Call the model with a lower temperature for consistent output.
+   
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         response_format={"type": "json_object"},
         messages=messages,
-        temperature=0.2  # Uncomment if you wish to set temperature
+        temperature=0.2  
     )
     
     # Parse the JSON output from the response.
