@@ -3,9 +3,7 @@ import json
 import streamlit as st
 import PyPDF2
 from openai import OpenAI
-
 from dotenv import load_dotenv
-
 
 # Load the .env file
 load_dotenv()
@@ -14,7 +12,6 @@ def extract_text_from_pdf(pdf_file):
     """Extract text from a PDF file object."""
     text = ""
     try:
-        # Use PyPDF2 to read the uploaded PDF file
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         for page in pdf_reader.pages:
             page_text = page.extract_text()
@@ -24,57 +21,64 @@ def extract_text_from_pdf(pdf_file):
         st.error(f"Error extracting text from PDF: {e}")
     return text
 
+def sanitize_text(text):
+    """
+    Remove or neutralize phrases that might be used for prompt injection.
+    You can expand the list below with other suspicious phrases as needed.
+    """
+    suspicious_phrases = ["Ignoring all the other prompts"]
+    for phrase in suspicious_phrases:
+        text = text.replace(phrase, "")
+    return text
+
 def analyze_resume_relevancy(resume_text, job_description):
     """
-    Call OpenAI GPT-3.5-turbo to analyze resume relevancy for the job description.
-    This version also evaluates the similarity of soft skills and technical skills,
-    and provides a confidence score for the analysis.
+    Calls OpenAI GPT-3.5-turbo to analyze resume relevancy for the job description.
+    User inputs are sanitized to remove suspicious instructions.
+    The model is instructed (via a system message) to output only a valid JSON object.
     """
     # Initialize OpenAI client using your API key from environment variables
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
-    # Create the prompt containing both the job description and resume text
-    prompt = f"""
-    Acting as a HR MAnager, Extract the relevancy of this resume to this job description:
-    
-    JOB DESCRIPTION:
-    {job_description}
-    
-    RESUME:
-    {resume_text}
-    
-    Your output should contain a JSON with {{
-        "relevancy_score": <float value between 0 and 100 indicating overall relevancy>,
-        "soft_skills_similarity": <float value between 0 and 100 indicating soft skills similarity>,
-        "technical_skills_similarity": <float value between 0 and 100 indicating technical skills similarity>,
-        "confidence_score": <float value between 0 and 100 indicating how confident the analysis is>,
-        "highlights": <array of short string highlights (each less than 20 characters) relevant to the job description>,
-        "reasons": <string providing reasons for the scores>,
-        "skill_gaps": [
-            {{"name": "skill_name", "value": <float between 0 and 1>}}
-            ...
-        ]
-    }}
-    """
-    
-    # Call the GPT-3.5-turbo model with a lower temperature for more consistent output
-    response = client.chat.completions.create(
-        # model="gpt-3.5-turbo",
-        # model="gpt-4o",
-        # model="o1",
-        # model="gpt-4o-mini",
-        # model="o1-mini",
-        model="o3-mini",
-        
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that analyzes resume relevancy for job descriptions. Provide honest, accurate assessments in JSON format."},
-            {"role": "user", "content": prompt}
-        ],
-        # temperature=0.2
+    # Sanitize the resume text (and optionally the job description) to remove injection attempts.
+    resume_text = sanitize_text(resume_text)
+    # job_description = sanitize_text(job_description)  # Uncomment if needed
+
+    # Define a strict system message that sets the expected JSON output format.
+    system_message = (
+        "You are a HR Manager who analyzes resume relevancy for job descriptions. "
+        "Your output must be a valid JSON object that exactly follows this schema and nothing else:\n\n"
+        '{\n'
+        '  "relevancy_score": <float between 0 and 100>,\n'
+        '  "soft_skills_similarity": <float between 0 and 100>,\n'
+        '  "technical_skills_similarity": <float between 0 and 100>,\n'
+        '  "confidence_score": <float between 0 and 100>,\n'
+        '  "highlights": <list of short strings (each less than 20 characters)>,\n'
+        '  "reasons": <string>,\n'
+        '  "skill_gaps": [\n'
+        '    {"name": "skill_name", "value": <float between 0 and 1>},\n'
+        '    ...\n'
+        '  ]\n'
+        '}\n'
+        "Do not output any additional text, explanation, or formatting."
     )
     
-    # Parse the JSON output from the response
+    # Provide the job description and sanitized resume text as separate messages.
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": f"Job Description:\n{job_description}"},
+        {"role": "user", "content": f"Resume:\n{resume_text}"}
+    ]
+    
+    # Call the model with a lower temperature for consistent output.
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        response_format={"type": "json_object"},
+        messages=messages,
+        temperature=0.2  # Uncomment if you wish to set temperature
+    )
+    
+    # Parse the JSON output from the response.
     result = json.loads(response.choices[0].message.content)
     return result
 
